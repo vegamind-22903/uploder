@@ -1,20 +1,71 @@
 package si.vegamind;
 
 import okhttp3.*;
+import org.java_websocket.client.WebSocketClient;
+import org.java_websocket.handshake.ServerHandshake;
+import org.json.JSONObject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.File;
+import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 
 public class Main {
+	private static WebSocketClient webSocketClient;
+
 	public static void main(String[] args) {
+		try {
+			webSocketClient = new WebSocketClient(new URI("ws://192.168.43.1:8081/")) {
+				@Override
+				public void onOpen(ServerHandshake serverHandshake) {
+				}
+
+				@Override
+				public void onMessage(String messageRaw) {
+					System.out.println(messageRaw);
+
+					JSONObject message = new JSONObject(messageRaw);
+					String payloadRaw = message.getString("payload");
+					JSONObject payload = new JSONObject(payloadRaw);
+
+					switch(payload.getString("status")) {
+						case "SUCCESSFUL" -> {
+							System.out.println("BUILD SUCCEEDED");
+							webSocketClient.close();
+						}
+						case "FAILED" -> {
+							System.err.println("BUILD FAILED");
+							webSocketClient.close();
+						}
+					}
+				}
+
+				@Override
+				public void onClose(int i, String s, boolean b) {
+				}
+
+				@Override
+				public void onError(Exception e) {
+					System.err.println(e.getMessage());
+					System.exit(0);
+				}
+			};
+		} catch(Exception e) {
+			e.printStackTrace();
+		}
+
+		webSocketClient.connect();
+
 		File root = new File(args[0]);
 
 		for(File file : findFiles(root.listFiles())) {
 			upload(file);
 		}
 
+		webSocketClient.send("{\"namespace\":\"system\",\"type\":\"subscribeToNamespace\",\"payload\":\"ONBOTJAVA\"}");
 		compile();
 	}
 
@@ -50,25 +101,12 @@ public class Main {
 					.build();
 
 			Response response = client.newCall(request).execute();
-			System.out.println(response.body().string());
 		} catch(Exception e) {
 			e.printStackTrace();
 		}
 	}
 
 	private static void compile() {
-		try {
-			OkHttpClient client = new OkHttpClient().newBuilder().build();
-
-			Request request = new Request.Builder()
-					.url("http://192.168.43.1:8080/java/build/start")
-					.get()
-					.build();
-
-			Response response = client.newCall(request).execute();
-			System.out.println(response.body().string());
-		} catch(Exception e) {
-			e.printStackTrace();
-		}
+		webSocketClient.send("{namespace: \"ONBOTJAVA\", type: \"build:launch\", payload: \"\"}");
 	}
 }
